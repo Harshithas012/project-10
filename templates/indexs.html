@@ -1,0 +1,1613 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>India Real-Time Rain Alert</title>
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            text-align: center;
+            background: #f3f6f9;
+        }
+
+        h1 {
+            font-size: 23px;
+        }
+
+        button,
+        select {
+            width: 185px;
+            height: 42px;
+            margin: 4px;
+            font-size: 15px;
+            border-radius: 6px;
+            border: 1px solid #aaa;
+        }
+
+        #map {
+            width: 100%;
+            height: 360px;
+            margin-top: 10px;
+            border-radius: 10px;
+        }
+
+        .box {
+            background: white;
+            margin-top: 10px;
+            padding: 12px;
+            border-radius: 10px;
+            text-align: left;
+        }
+
+        .title {
+            font-size: 19px;
+            font-weight: bold;
+        }
+
+        .rainNow {
+            color: red;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .noRain {
+            color: green;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .blue {
+            color: #006eff;
+            font-weight: bold;
+        }
+
+        .hourBox {
+            background: #eef7ff;
+            margin-top: 6px;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<h1>🛰️ 🌧️ India Rain Alert</h1>
+
+
+<button onclick="findPlace(true)">
+    📍 My Location
+</button>
+
+<button onclick="checkCurrentRain()">
+    🌧️ My Rain
+</button>
+
+<br>
+
+<button onclick="setMapType('roadmap')">
+    🗺️ Map
+</button>
+
+<button onclick="setMapType('satellite')">
+    🛰️ Satellite
+</button>
+
+<br>
+
+<button onclick="showIndiaRain()">
+    🌧️ Rain Across India
+</button>
+
+<button onclick="clearIndiaRain()">
+    ❌ Clear Rain
+</button>
+
+<br><br>
+
+<label>
+    📡 Update:
+</label>
+
+<select
+    id="updateTime"
+    onchange="changeUpdateTime()"
+>
+
+    <option value="60" selected>
+        Every 1 hour
+    </option>
+
+    <option value="10">
+        Every 10 minutes
+    </option>
+
+    <option value="5">
+        Every 5 minutes
+    </option>
+
+</select>
+
+
+<div id="map"></div>
+
+
+<!-- LOCATION NAME -->
+
+<div class="box">
+
+    <div
+        class="title"
+        id="locationTitle"
+    >
+        📍 Current Location
+    </div>
+
+    <div id="locationText">
+        Waiting for GPS...
+    </div>
+
+</div>
+
+
+<!-- INDIA RAIN -->
+
+<div
+    class="box"
+    id="indiaRainInfo"
+>
+
+    <b>🌧️ Rain Across India</b>
+
+    <br><br>
+
+    🔵 Blue areas = Rain detected
+
+    <br><br>
+
+    Waiting for data...
+
+</div>
+
+
+<!-- CURRENT RAIN -->
+
+<div
+    class="box"
+    id="rainInfo"
+>
+
+    🌧️ Rain information will appear here.
+
+</div>
+
+
+<!-- HISTORY -->
+
+<div class="box">
+
+    <div class="title">
+        ➡️ Location History
+    </div>
+
+    <div id="historyText">
+        No history yet.
+    </div>
+
+</div>
+
+
+<!-- TIMER -->
+
+<div class="box">
+
+    ⏱️ Next automatic update:
+
+    <b id="nextUpdate">
+        Starting...
+    </b>
+
+</div>
+
+
+<script>
+
+
+// ==================================================
+// VARIABLES
+// ==================================================
+
+let map = null;
+
+let marker = null;
+
+let accuracyCircle = null;
+
+let currentLocation = null;
+
+let rainCircles = [];
+
+let updateTimer = null;
+
+let countdownTimer = null;
+
+let nextUpdateTime = null;
+
+let firstLocationUpdate = true;
+
+
+// ==================================================
+// LOCATION HISTORY
+// ==================================================
+
+let locationHistory = [];
+
+const HISTORY_KEY =
+    "indiaRainLocationHistory";
+
+
+// ONE YEAR
+
+const ONE_YEAR =
+    365 * 24 * 60 * 60 * 1000;
+
+
+// ==================================================
+// MAP
+// ==================================================
+
+function initMap() {
+
+    map = new google.maps.Map(
+
+        document.getElementById("map"),
+
+        {
+            center: {
+                lat: 20.5937,
+                lng: 78.9629
+            },
+
+            zoom: 5,
+
+            mapTypeId: "roadmap"
+        }
+
+    );
+
+
+    loadLocationHistory();
+
+    drawLocationHistory();
+
+    findPlace(true);
+
+    setTimeout(
+        showIndiaRain,
+        3000
+    );
+
+    changeUpdateTime();
+
+}
+
+
+// ==================================================
+// MAP TYPE
+// ==================================================
+
+function setMapType(type) {
+
+    if (!map) {
+        return;
+    }
+
+    map.setMapTypeId(type);
+
+}
+
+
+// ==================================================
+// GPS
+// ==================================================
+
+function findPlace(moveMap) {
+
+    if (!navigator.geolocation) {
+
+        document.getElementById(
+            "locationText"
+        ).innerHTML =
+            "❌ GPS is not supported.";
+
+        return;
+    }
+
+
+    document.getElementById(
+        "locationText"
+    ).innerHTML =
+        "📡 Getting your location...";
+
+
+    navigator.geolocation.getCurrentPosition(
+
+        function(position) {
+
+            updateLocation(
+                position,
+                moveMap
+            );
+
+        },
+
+        function(error) {
+
+            console.log(
+                "GPS Error:",
+                error
+            );
+
+            document.getElementById(
+                "locationText"
+            ).innerHTML =
+
+                "❌ Location permission denied or unavailable.";
+
+        },
+
+        {
+            enableHighAccuracy: true,
+            timeout: 20000,
+            maximumAge: 0
+        }
+
+    );
+
+}
+
+
+// ==================================================
+// UPDATE LOCATION
+// ==================================================
+
+function updateLocation(
+    position,
+    moveMap
+) {
+
+    currentLocation = {
+
+        lat:
+            position.coords.latitude,
+
+        lng:
+            position.coords.longitude
+
+    };
+
+
+    if (
+        firstLocationUpdate ||
+        moveMap === true
+    ) {
+
+        map.setCenter(
+            currentLocation
+        );
+
+        map.setZoom(14);
+
+        firstLocationUpdate = false;
+
+    }
+
+
+    // Current marker
+
+    if (marker) {
+        marker.setMap(null);
+    }
+
+
+    marker =
+        new google.maps.Marker({
+
+            position:
+                currentLocation,
+
+            map: map,
+
+            title:
+                "My Current Location",
+
+            animation:
+                google.maps.Animation.DROP
+
+        });
+
+
+    // Accuracy
+
+    if (accuracyCircle) {
+        accuracyCircle.setMap(null);
+    }
+
+
+    accuracyCircle =
+        new google.maps.Circle({
+
+            map: map,
+
+            center:
+                currentLocation,
+
+            radius:
+                position.coords.accuracy,
+
+            fillOpacity: 0.10,
+
+            strokeOpacity: 0.5
+
+        });
+
+
+    document.getElementById(
+        "locationText"
+    ).innerHTML =
+
+        "📡 Finding nearby place..." +
+
+        "<br><br>" +
+
+        "Latitude: " +
+        currentLocation.lat.toFixed(5) +
+
+        "<br>" +
+
+        "Longitude: " +
+        currentLocation.lng.toFixed(5);
+
+
+    // Get place name
+
+    getPlaceName(
+        currentLocation.lat,
+        currentLocation.lng
+    );
+
+
+    // Save location
+
+    saveLocationHistory(
+        currentLocation
+    );
+
+
+    // Draw history
+
+    drawLocationHistory();
+
+
+    // Rain
+
+    checkCurrentRain();
+
+}
+
+
+// ==================================================
+// GET NEARBY NAME
+// ==================================================
+
+function getPlaceName(lat, lng) {
+
+    const geocoder =
+        new google.maps.Geocoder();
+
+
+    geocoder.geocode(
+
+        {
+            location: {
+                lat: lat,
+                lng: lng
+            }
+        },
+
+        function(results, status) {
+
+            console.log(
+                "Geocoder status:",
+                status
+            );
+
+
+            if (
+                status !== "OK" ||
+                !results ||
+                results.length === 0
+            ) {
+
+                document.getElementById(
+                    "locationTitle"
+                ).innerHTML =
+                    "📍 Location";
+
+
+                document.getElementById(
+                    "locationText"
+                ).innerHTML =
+
+                    "Latitude: " +
+                    lat.toFixed(5) +
+
+                    "<br>" +
+
+                    "Longitude: " +
+                    lng.toFixed(5) +
+
+                    "<br><br>" +
+
+                    "❌ Nearby name not available.";
+
+
+                return;
+
+            }
+
+
+            let nearbyName = "";
+
+
+            // These are checked in this order.
+
+            const wantedTypes = [
+
+                "locality",
+
+                "postal_town",
+
+                "administrative_area_level_2",
+
+                "administrative_area_level_3",
+
+                "sublocality",
+
+                "sublocality_level_1",
+
+                "neighborhood",
+
+                "town",
+
+                "village"
+
+            ];
+
+
+            for (
+                const type of wantedTypes
+            ) {
+
+                for (
+                    const result of results
+                ) {
+
+                    for (
+                        const component
+                        of result.address_components
+                    ) {
+
+                        if (
+                            component.types.includes(type)
+                        ) {
+
+                            nearbyName =
+                                component.long_name;
+
+                            break;
+
+                        }
+
+                    }
+
+                    if (nearbyName) {
+                        break;
+                    }
+
+                }
+
+                if (nearbyName) {
+                    break;
+                }
+
+            }
+
+
+            // Last fallback
+
+            if (!nearbyName) {
+
+                nearbyName =
+                    results[0].formatted_address;
+
+            }
+
+
+            // SHOW NAME
+
+            document.getElementById(
+                "locationTitle"
+            ).innerHTML =
+
+                "📍 " +
+                nearbyName;
+
+
+            document.getElementById(
+                "locationText"
+            ).innerHTML =
+
+                "🏙️ <b>" +
+                nearbyName +
+                "</b>" +
+
+                "<br><br>" +
+
+                "Latitude: " +
+                lat.toFixed(5) +
+
+                "<br>" +
+
+                "Longitude: " +
+                lng.toFixed(5);
+
+
+            if (marker) {
+
+                marker.setTitle(
+                    "📍 " +
+                    nearbyName
+                );
+
+            }
+
+
+            console.log(
+                "Nearby name:",
+                nearbyName
+            );
+
+        }
+
+    );
+
+}
+
+
+// ==================================================
+// SAVE HISTORY
+// ==================================================
+
+function saveLocationHistory(location) {
+
+    let history = [];
+
+
+    try {
+
+        history =
+            JSON.parse(
+                localStorage.getItem(
+                    HISTORY_KEY
+                ) || "[]"
+            );
+
+    }
+
+    catch (error) {
+
+        history = [];
+
+    }
+
+
+    const now =
+        Date.now();
+
+
+    // Only save once per hour.
+
+    if (history.length > 0) {
+
+        const last =
+            history[
+                history.length - 1
+            ];
+
+        const ONE_HOUR =
+            60 * 60 * 1000;
+
+
+        if (
+            now - last.time <
+            ONE_HOUR
+        ) {
+
+            locationHistory =
+                history;
+
+            showHistoryText();
+
+            return;
+
+        }
+
+    }
+
+
+    history.push({
+
+        lat:
+            location.lat,
+
+        lng:
+            location.lng,
+
+        time:
+            now
+
+    });
+
+
+    // Delete data older than 1 year
+
+    history =
+        history.filter(
+
+            function(item) {
+
+                return (
+                    now - item.time
+                    <= ONE_YEAR
+                );
+
+            }
+
+        );
+
+
+    localStorage.setItem(
+
+        HISTORY_KEY,
+
+        JSON.stringify(history)
+
+    );
+
+
+    locationHistory =
+        history;
+
+
+    showHistoryText();
+
+}
+
+
+// ==================================================
+// LOAD HISTORY
+// ==================================================
+
+function loadLocationHistory() {
+
+    try {
+
+        locationHistory =
+
+            JSON.parse(
+
+                localStorage.getItem(
+                    HISTORY_KEY
+                ) || "[]"
+
+            );
+
+    }
+
+    catch (error) {
+
+        locationHistory = [];
+
+    }
+
+
+    removeOldHistory();
+
+    showHistoryText();
+
+}
+
+
+// ==================================================
+// DELETE OLD HISTORY
+// ==================================================
+
+function removeOldHistory() {
+
+    const now =
+        Date.now();
+
+
+    locationHistory =
+        locationHistory.filter(
+
+            function(item) {
+
+                return (
+                    now - item.time
+                    <= ONE_YEAR
+                );
+
+            }
+
+        );
+
+
+    localStorage.setItem(
+
+        HISTORY_KEY,
+
+        JSON.stringify(
+            locationHistory
+        )
+
+    );
+
+}
+
+
+// ==================================================
+// DRAW HISTORY
+// ==================================================
+
+function drawLocationHistory() {
+
+    if (!map) {
+        return;
+    }
+
+
+    // Remove old markers
+
+    if (window.historyMarkers) {
+
+        window.historyMarkers.forEach(
+            function(item) {
+                item.setMap(null);
+            }
+        );
+
+    }
+
+
+    window.historyMarkers = [];
+
+
+    // Remove old lines
+
+    if (window.historyLines) {
+
+        window.historyLines.forEach(
+            function(item) {
+                item.setMap(null);
+            }
+        );
+
+    }
+
+
+    window.historyLines = [];
+
+
+    // Draw locations
+
+    locationHistory.forEach(
+
+        function(item, index) {
+
+            const historyMarker =
+
+                new google.maps.Marker({
+
+                    position: {
+
+                        lat:
+                            item.lat,
+
+                        lng:
+                            item.lng
+
+                    },
+
+                    map: map,
+
+                    label: {
+
+                        text:
+                            index === 0
+                                ? "📍"
+                                : "➤",
+
+                        fontSize: "20px"
+
+                    },
+
+                    title:
+
+                        "Location " +
+                        (index + 1) +
+
+                        "\n" +
+
+                        new Date(
+                            item.time
+                        ).toLocaleString()
+
+                });
+
+
+            window.historyMarkers.push(
+                historyMarker
+            );
+
+        }
+
+    );
+
+
+    // Arrow direction between locations
+
+    for (
+        let i = 1;
+        i < locationHistory.length;
+        i++
+    ) {
+
+        const oldLocation =
+            locationHistory[i - 1];
+
+
+        const newLocation =
+            locationHistory[i];
+
+
+        const line =
+            new google.maps.Polyline({
+
+                path: [
+
+                    {
+                        lat:
+                            oldLocation.lat,
+
+                        lng:
+                            oldLocation.lng
+                    },
+
+                    {
+                        lat:
+                            newLocation.lat,
+
+                        lng:
+                            newLocation.lng
+                    }
+
+                ],
+
+                geodesic: true,
+
+                strokeOpacity: 0.7,
+
+                strokeWeight: 3,
+
+                map: map,
+
+                icons: [
+
+                    {
+
+                        icon: {
+
+                            path:
+                                google.maps
+                                .SymbolPath
+                                .FORWARD_CLOSED_ARROW,
+
+                            scale: 4
+
+                        },
+
+                        offset: "100%"
+
+                    }
+
+                ]
+
+            });
+
+
+        window.historyLines.push(line);
+
+    }
+
+
+    // Current marker stays on top
+
+    if (marker) {
+
+        marker.setMap(map);
+
+        marker.setZIndex(9999);
+
+    }
+
+}
+
+
+// ==================================================
+// HISTORY INFORMATION
+// ==================================================
+
+function showHistoryText() {
+
+    const box =
+        document.getElementById(
+            "historyText"
+        );
+
+
+    if (!locationHistory.length) {
+
+        box.innerHTML =
+            "No location history yet.";
+
+        return;
+
+    }
+
+
+    box.innerHTML =
+
+        "📍 Saved locations: " +
+        locationHistory.length +
+
+        "<br><br>" +
+
+        "➡️ New location every hour" +
+
+        "<br>" +
+
+        "🗑️ Records older than 1 year are automatically deleted.";
+
+}
+
+
+// ==================================================
+// CURRENT RAIN
+// ==================================================
+
+async function checkCurrentRain() {
+
+    if (!currentLocation) {
+        return;
+    }
+
+
+    const rainInfo =
+        document.getElementById(
+            "rainInfo"
+        );
+
+
+    rainInfo.innerHTML =
+        "🌧️ Checking rain...";
+
+
+    const url =
+        "http://127.0.0.1:5000/rain" +
+        "?lat=" +
+        currentLocation.lat +
+        "&lon=" +
+        currentLocation.lng;
+
+
+    try {
+
+        const response =
+            await fetch(url);
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Python server error"
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (!data.success) {
+
+            throw new Error(
+                data.error
+            );
+
+        }
+
+
+        const current =
+            data.current;
+
+
+        let html = "";
+
+
+        if (current.rain_now) {
+
+            html +=
+
+                "<div class='rainNow'>" +
+                "🚨 🌧️ RAIN NOW" +
+                "</div>";
+
+        }
+
+        else {
+
+            html +=
+
+                "<div class='noRain'>" +
+                "☀️ NO RAIN NOW" +
+                "</div>";
+
+        }
+
+
+        html +=
+
+            "<br>" +
+
+            "🕐 " +
+            current.time +
+
+            "<br><br>" +
+
+            "🌧️ Rain: " +
+            current.rain_mm +
+            " mm" +
+
+            "<br>" +
+
+            "💧 Precipitation: " +
+            current.precipitation_mm +
+            " mm" +
+
+            "<br>" +
+
+            "☁️ Cloud: " +
+            current.cloud_cover +
+            "%" +
+
+            "<hr>" +
+
+            "<b>🌧️ NEXT 6 HOURS</b>";
+
+
+        data.forecast.forEach(
+
+            function(item) {
+
+                html +=
+
+                    "<div class='hourBox'>" +
+
+                    "🕐 " +
+                    item.time +
+
+                    "<br>" +
+
+                    "🌧️ Rain: " +
+                    item.rain_mm +
+                    " mm" +
+
+                    "<br>" +
+
+                    "📊 Probability: " +
+                    item.probability +
+                    "%" +
+
+                    "<br>" +
+
+                    "☁️ Cloud: " +
+                    item.cloud_cover +
+                    "%" +
+
+                    "</div>";
+
+            }
+
+        );
+
+
+        rainInfo.innerHTML =
+            html;
+
+    }
+
+    catch(error) {
+
+        console.error(error);
+
+        rainInfo.innerHTML =
+
+            "❌ Rain data error.<br>" +
+            error.message;
+
+    }
+
+}
+
+
+// ==================================================
+// INDIA RAIN
+// ==================================================
+
+async function showIndiaRain() {
+
+    if (!map) {
+        return;
+    }
+
+
+    document.getElementById(
+        "indiaRainInfo"
+    ).innerHTML =
+
+        "<b>🌧️ Rain Across India</b>" +
+        "<br><br>" +
+        "📡 Updating...";
+
+
+    try {
+
+        const response =
+            await fetch(
+                "http://127.0.0.1:5000/india-rain"
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "India rain server error"
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (!data.success) {
+
+            throw new Error(
+                data.error
+            );
+
+        }
+
+
+        clearIndiaRain();
+
+
+        data.rain_areas.forEach(
+
+            function(area) {
+
+                const circle =
+
+                    new google.maps.Circle({
+
+                        map: map,
+
+                        center: {
+
+                            lat:
+                                area.lat,
+
+                            lng:
+                                area.lon
+
+                        },
+
+                        radius:
+                            area.radius,
+
+                        fillColor:
+                            "#008CFF",
+
+                        fillOpacity:
+                            0.35,
+
+                        strokeColor:
+                            "#0066FF",
+
+                        strokeOpacity:
+                            0.6,
+
+                        strokeWeight: 1
+
+                    });
+
+
+                rainCircles.push(
+                    circle
+                );
+
+            }
+
+        );
+
+
+        document.getElementById(
+            "indiaRainInfo"
+        ).innerHTML =
+
+            "<b>🌧️ Rain Across India</b>" +
+
+            "<br><br>" +
+
+            "<span class='blue'>" +
+            "🔵 Blue = Rain detected" +
+            "</span>" +
+
+            "<br><br>" +
+
+            "🌧️ Rain areas: " +
+            data.rain_areas.length +
+
+            "<br>" +
+
+            "🕐 Updated: " +
+            data.updated;
+
+    }
+
+    catch(error) {
+
+        console.error(error);
+
+        document.getElementById(
+            "indiaRainInfo"
+        ).innerHTML =
+
+            "<b>🌧️ Rain Across India</b>" +
+
+            "<br><br>" +
+
+            "❌ " +
+            error.message;
+
+    }
+
+}
+
+
+// ==================================================
+// CLEAR INDIA RAIN
+// ==================================================
+
+function clearIndiaRain() {
+
+    rainCircles.forEach(
+
+        function(circle) {
+
+            circle.setMap(null);
+
+        }
+
+    );
+
+
+    rainCircles = [];
+
+}
+
+
+// ==================================================
+// AUTOMATIC UPDATE
+// ==================================================
+
+function changeUpdateTime() {
+
+    const minutes =
+
+        Number(
+            document.getElementById(
+                "updateTime"
+            ).value
+        );
+
+
+    if (updateTimer) {
+
+        clearInterval(
+            updateTimer
+        );
+
+    }
+
+
+    if (countdownTimer) {
+
+        clearInterval(
+            countdownTimer
+        );
+
+    }
+
+
+    nextUpdateTime =
+
+        Date.now() +
+
+        minutes *
+        60 *
+        1000;
+
+
+    updateTimer =
+
+        setInterval(
+
+            function() {
+
+                findPlace(false);
+
+                showIndiaRain();
+
+
+                nextUpdateTime =
+
+                    Date.now() +
+
+                    minutes *
+                    60 *
+                    1000;
+
+            },
+
+            minutes *
+            60 *
+            1000
+
+        );
+
+
+    countdownTimer =
+
+        setInterval(
+
+            function() {
+
+                updateCountdown();
+
+            },
+
+            1000
+
+        );
+
+
+    updateCountdown();
+
+}
+
+
+// ==================================================
+// COUNTDOWN
+// ==================================================
+
+function updateCountdown() {
+
+    if (!nextUpdateTime) {
+        return;
+    }
+
+
+    let seconds =
+
+        Math.max(
+
+            0,
+
+            Math.floor(
+
+                (
+                    nextUpdateTime -
+                    Date.now()
+                ) / 1000
+
+            )
+
+        );
+
+
+    const hours =
+        Math.floor(
+            seconds / 3600
+        );
+
+
+    seconds %= 3600;
+
+
+    const minutes =
+        Math.floor(
+            seconds / 60
+        );
+
+
+    seconds %= 60;
+
+
+    document.getElementById(
+        "nextUpdate"
+    ).innerHTML =
+
+        String(hours).padStart(2, "0") +
+
+        ":" +
+
+        String(minutes).padStart(2, "0") +
+
+        ":" +
+
+        String(seconds).padStart(2, "0");
+
+}
+
+</script>
+
+
+<!-- GOOGLE MAPS API -->
+
+<script
+src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCJThgP88Gzj1PWltHpgiB_9jfXiJfesOc&libraries=places,geometry&callback=initMap"
+async
+defer>
+</script>
+
+
+</body>
+
+</html>
